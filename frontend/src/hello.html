@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Use Case Diagram – Background Evaluation Cycle</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #d0d0d0;
+    display: flex; flex-direction: column;
+    align-items: center; padding: 20px;
+    font-family: Georgia, serif;
+  }
+  button {
+    margin-bottom: 14px; padding: 10px 32px;
+    background: #1a1a1a; color: #fff;
+    border: none; border-radius: 6px;
+    font-size: 14px; cursor: pointer;
+    font-family: Georgia, serif;
+  }
+  button:hover { background: #444; }
+  canvas { background: #fff; box-shadow: 0 2px 20px rgba(0,0,0,0.15); display: block; }
+</style>
+</head>
+<body>
+<button onclick="exportPNG()">⬇ Export as PNG</button>
+<canvas id="c"></canvas>
+<script>
+// Very wide and tall canvas — generous whitespace everywhere
+const W = 1400, H = 1100;
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d');
+
+/* ── primitives ─────────────────────────────────────────── */
+function ell(x, y, rx, ry, lines) {
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([]); ctx.stroke();
+  ctx.fillStyle = '#111';
+  ctx.font = '11px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const lh = 15;
+  const sy = y - ((lines.length-1)*lh)/2;
+  lines.forEach((l,i) => ctx.fillText(l, x, sy+i*lh));
+}
+
+function actor(x, y, label) {
+  ctx.strokeStyle='#111'; ctx.lineWidth=1.5; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(x,y,12,0,Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x,y+12); ctx.lineTo(x,y+38); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-18,y+22); ctx.lineTo(x+18,y+22); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x,y+38); ctx.lineTo(x-14,y+56); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x,y+38); ctx.lineTo(x+14,y+56); ctx.stroke();
+  ctx.fillStyle='#111'; ctx.font='12px Georgia,serif';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText(label, x, y+60);
+}
+
+function solid(x1,y1,x2,y2) {
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+  ctx.strokeStyle='#111'; ctx.lineWidth=1.2;
+  ctx.setLineDash([]); ctx.stroke();
+}
+
+function dash(x1,y1,x2,y2,lbl) {
+  const dx=x2-x1, dy=y2-y1;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  const ux=dx/len, uy=dy/len;
+  ctx.save();
+  ctx.setLineDash([5,4]); ctx.strokeStyle='#111'; ctx.lineWidth=1.1;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2-ux*6,y2-uy*6); ctx.stroke();
+  ctx.setLineDash([]);
+  const a=Math.atan2(dy,dx), s=8;
+  ctx.beginPath();
+  ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-s*Math.cos(a-0.38), y2-s*Math.sin(a-0.38));
+  ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-s*Math.cos(a+0.38), y2-s*Math.sin(a+0.38));
+  ctx.lineWidth=1.1; ctx.stroke();
+  if (lbl) {
+    const mx=(x1+x2)/2, my=(y1+y2)/2;
+    ctx.font='italic 10px Georgia,serif';
+    const tw=ctx.measureText(lbl).width;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(mx-tw/2-3, my-7, tw+6, 14);
+    ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(lbl, mx, my);
+  }
+  ctx.restore();
+}
+
+function note(x,y,txt) {
+  ctx.font='italic 10px Georgia,serif';
+  ctx.fillStyle='#777'; ctx.textAlign='center';
+  ctx.fillText(txt, x, y);
+}
+
+/* ── Positions ───────────────────────────────────────────── */
+// Rows — very generous vertical gaps
+const R1 = 100;   // Cron fires
+const R2 = 210;   // Retrieve active
+const R3 = 360;   // 4 conditions  (wide row)
+const R4 = 530;   // Fallback deadline
+const R5 = 690;   // 3 trigger actions
+const R6 = 860;   // Stays active
+const R7 = 980;   // Outcome
+
+// Centre
+const CX = 700;
+
+// 4 conditions — spread very wide
+const CA = 200, CB = 450, CC = 700, CD = 950;   // adjusted: 4 items across full width
+
+// 3 trigger actions — spread
+const TA = 340, TB = 700, TC = 1060;
+
+/* ── Draw ────────────────────────────────────────────────── */
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+
+  // Boundary box
+  ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.setLineDash([]);
+  ctx.strokeRect(170, 42, 1060, 1020);
+
+  ctx.font='italic 12px Georgia,serif'; ctx.fillStyle='#111'; ctx.textAlign='center';
+  ctx.fillText('<<subsystem>>', CX, 36);
+  ctx.font='bold 14px Georgia,serif';
+  ctx.fillText('Background Evaluation Cycle', CX, 56);
+
+  // Actors — far outside boundary
+  actor(68,  430, 'Scheduler');
+  actor(1330, 430, 'System');
+
+  /* ── Use Cases ── */
+
+  // R1
+  ell(CX, R1, 160, 22, ['Cron Job Fires Every 30 Seconds']);
+
+  // R2
+  ell(CX, R2, 145, 22, ['Retrieve All Active Reminders']);
+
+  // R3 — 4 conditions, each 95px rx, 140px apart
+  ell(CA, R3, 105, 28, ['Check Availability','Condition']);
+  ell(CB, R3, 105, 28, ['Check Specific','Time Condition']);
+  ell(CC, R3, 105, 28, ['Check Working','Hours Condition']);
+  ell(CD, R3, 105, 28, ['Check Selected','Days Condition']);
+
+  // R4
+  ell(CX, R4, 165, 24, ['Check Fallback Deadline','(if set & passed)']);
+  note(CX, R4+40, 'only if preferred condition not met');
+
+  // R5 — 3 actions wide apart
+  ell(TA, R5, 118, 28, ['Update Status to','"triggered"']);
+  ell(TB, R5, 118, 28, ['Create In-App','Notification (UC-12)']);
+  ell(TC, R5, 118, 28, ['Log Trigger','Event']);
+  note(TA, R5+44, 'triggeredAt · triggerType · notifMethod');
+  note(CX, R5-60, 'if any condition matches');
+
+  // R6
+  ell(CX, R6, 165, 24, ['Reminder Stays Active','for Next Cycle']);
+  note(CX, R6+40, 'if no condition matches');
+
+  // R7 — outcome
+  ell(CX, R7, 160, 24, ['Evaluation Cycle Complete']);
+
+  /* ── Associations ── */
+  solid(100, 438, 340, R1);
+  solid(100, 445, 340, R2);
+  solid(1308, 438, 1060, R2);
+  solid(1308, 446, 1060, R3);
+  solid(1308, 454, 1060, R4);
+  solid(1308, 462, 1060, R5);
+  solid(1308, 470, 1060, R6);
+  solid(1308, 478, 1060, R7);
+
+  /* ── <<include>> Cron → Retrieve ── */
+  dash(CX, R1+22, CX, R2-22, '<<include>>');
+
+  /* ── <<include>> Retrieve → 4 conditions ── */
+  dash(570, R2+10, CA+80, R3-28, '<<include>>');
+  dash(620, R2+14, CB+30, R3-28, '<<include>>');
+  dash(700, R2+22, CC,    R3-28, '<<include>>');
+  dash(770, R2+14, CD-30, R3-28, '<<include>>');
+
+  /* ── <<extend>> conditions → fallback (not met path) ── */
+  dash(CA, R3+28, 580, R4-24, '<<extend>>');
+  dash(CB, R3+28, 630, R4-24, '<<extend>>');
+  dash(CC, R3+28, 700, R4-24, '<<extend>>');
+  dash(CD, R3+28, 780, R4-24, '<<extend>>');
+
+  /* ── <<extend>> conditions → trigger actions (matched path) ── */
+  dash(CA+50, R3+20, TA-60, R5-28, '<<extend>>');
+  dash(CB+50, R3+20, TA+20, R5-28, '<<extend>>');
+  dash(CC,    R3+28, TB,    R5-28, '<<extend>>');
+  dash(CD-50, R3+20, TC-60, R5-28, '<<extend>>');
+
+  /* ── <<extend>> fallback → trigger actions ── */
+  dash(560, R4+24, TA+30, R5-28, '<<extend>>');
+  dash(700, R4+24, TB,    R5-28, '<<extend>>');
+  dash(840, R4+24, TC-40, R5-28, '<<extend>>');
+
+  /* ── <<extend>> no match → stays active ── */
+  dash(CX, R4+24, CX, R6-24, '<<extend>>');
+
+  /* ── <<include>> stays active → outcome ── */
+  dash(CX, R6+24, CX, R7-24, '<<include>>');
+
+  /* ── <<include>> trigger actions → outcome ── */
+  dash(TA+40, R5+28, 580, R7-24, '<<include>>');
+  dash(TB,    R5+28, TB,  R7-24, '<<include>>');
+  dash(TC-40, R5+28, 820, R7-24, '<<include>>');
+
+  /* ── Legend ── */
+  const lx=178, ly=1056;
+  ctx.font='11px Georgia,serif'; ctx.textAlign='left';
+  solid(lx,ly,lx+30,ly);
+  ctx.fillStyle='#111'; ctx.fillText('Association', lx+36, ly+4);
+
+  ctx.save();
+  ctx.setLineDash([5,4]); ctx.strokeStyle='#111'; ctx.lineWidth=1.1;
+  ctx.beginPath(); ctx.moveTo(lx+170,ly); ctx.lineTo(lx+200,ly); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(lx+200,ly); ctx.lineTo(lx+193,ly-4);
+  ctx.moveTo(lx+200,ly); ctx.lineTo(lx+193,ly+4); ctx.stroke();
+  ctx.fillStyle='#111'; ctx.fillText('<<include>>', lx+206, ly+4);
+  ctx.restore();
+
+  ctx.save();
+  ctx.setLineDash([5,4]); ctx.strokeStyle='#111'; ctx.lineWidth=1.1;
+  ctx.beginPath(); ctx.moveTo(lx+360,ly); ctx.lineTo(lx+390,ly); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(lx+390,ly); ctx.lineTo(lx+383,ly-4);
+  ctx.moveTo(lx+390,ly); ctx.lineTo(lx+383,ly+4); ctx.stroke();
+  ctx.fillStyle='#111'; ctx.fillText('<<extend>> (conditional)', lx+396, ly+4);
+  ctx.restore();
+}
+
+draw();
+
+function exportPNG() {
+  const a = document.createElement('a');
+  a.download = 'usecase_evaluation_cycle.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+</script>
+</body>
+</html>

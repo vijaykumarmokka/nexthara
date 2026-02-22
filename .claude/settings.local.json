@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(node --input-type=module:*)",
+      "Bash(node --check:*)",
+      "Bash(node -e:*)",
+      "Bash(npx vite build:*)",
+      "Bash(npm install:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(kill:*)",
+      "Bash(__NEW_LINE_351afa27edf01350__ echo \"\")",
+      "Bash(__NEW_LINE_e52af80104b4ca0b__ echo \"\")",
+      "Bash(pkill:*)",
+      "Bash(ls:*)",
+      "Bash(npx --no-install tsc:*)",
+      "Bash(node_modules/.bin/eslint:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjdiM2RlNjA3LWMxMDYtNGZhYS04N2YxLTU4MTIyY2RmYTM1NSIsImJhbmtfaWQiOiI5NzE1M2QyMS1kYWUxLTQwNDItODM5ZS0yY2RhOWVhZDkxOGQiLCJiYW5rX3JvbGUiOiJTVVBFUl9BRE1JTiIsImJyYW5jaF9pZCI6bnVsbCwibmFtZSI6IlJhamVzaCBLdW1hciIsImVtYWlsIjoiYWRtaW5AaGRmYy5jb20iLCJwb3J0YWwiOiJiYW5rX2FkbWluIiwiYmFua19uYW1lIjoiSERGQyBCYW5rIiwiaWF0IjoxNzcxNTY3OTg0LCJleHAiOjE3NzE1OTY3ODR9.tuNQi24AzVAoIb5MeI2-TvsKs8DyHjZGUvU5BIkJzP0\")",
+      "Bash(BANK_ID=\"97153d21-dae1-4042-839e-2cda9ead918d\")",
+      "Bash(__NEW_LINE_143f9d58a95d509e__ curl -s \"http://localhost:5001/api/bank-admin/banks/$BANK_ID/enhanced-dashboard\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(__NEW_LINE_e826e4f84fe7f8fb__ curl -sv \"http://localhost:5001/api/bank-admin/banks/$BANK_ID/enhanced-dashboard\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(npm run build)",
+      "Bash(wc:*)",
+      "Bash(node:*)",
+      "Bash(cd:*)",
+      "Bash(brew services:*)",
+      "Bash(psql:*)",
+      "Bash(tail:*)",
+      "Bash(cd /Users/vinayreddychetelli/Downloads/starup-spark-hub-main/backend && npx prisma db push 2>&1)"
+    ]
+  }
+}
