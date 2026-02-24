@@ -245,29 +245,115 @@ router.get('/case/:caseId/documents', (req, res) => {
   res.json({ groups: result });
 });
 
+// GET /api/student/case/:caseId/checklist — student-visible checklist items
+router.get('/case/:caseId/checklist', (req, res) => {
+  const { app_ids } = req.student;
+  if (!app_ids.includes(req.params.caseId)) return res.status(403).json({ error: 'Forbidden' });
+
+  try {
+    const items = db.prepare(`
+      SELECT c.id, c.doc_code, c.doc_name, c.status, c.requirement_level,
+             c.owner_entity_type, c.remarks, c.due_at, c.uploaded_at, c.verified_at,
+             d.description as help_text, d.file_rules,
+             ca.name as coapp_name, ca.coapp_type as coapp_type_val
+      FROM case_document_checklist_items c
+      LEFT JOIN document_master d ON d.doc_code = c.doc_code AND d.visible_to_student = 1
+      LEFT JOIN co_applicants ca ON ca.id = CAST(c.owner_entity_id AS INTEGER) AND c.owner_entity_type = 'COAPPLICANT'
+      WHERE c.case_id = ? AND c.status != 'WAIVED'
+      ORDER BY c.owner_entity_type, c.requirement_level DESC, c.doc_name ASC
+    `).all(req.params.caseId);
+
+    // Group by owner entity
+    const groups = {};
+    for (const item of items) {
+      let groupKey;
+      if (item.owner_entity_type === 'STUDENT')      groupKey = 'Student Documents';
+      else if (item.owner_entity_type === 'COAPPLICANT') groupKey = item.coapp_name ? `Co-Applicant: ${item.coapp_name}` : 'Co-Applicant';
+      else if (item.owner_entity_type === 'COLLATERAL')  groupKey = 'Collateral Documents';
+      else groupKey = 'Other';
+      if (!groups[groupKey]) groups[groupKey] = { group: groupKey, items: [] };
+      groups[groupKey].items.push(item);
+    }
+
+    const required_total = items.filter(i => i.requirement_level === 'REQUIRED').length;
+    const required_done  = items.filter(i => i.requirement_level === 'REQUIRED' && ['VERIFIED','UPLOADED'].includes(i.status)).length;
+
+    res.json({
+      summary: { required_total, required_done, progress_pct: required_total ? Math.round((required_done / required_total) * 100) : 0 },
+      groups: Object.values(groups),
+    });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/student/case/:caseId/documents/upload
 router.post('/case/:caseId/documents/upload', upload.single('file'), (req, res) => {
   const { app_ids } = req.student;
   if (!app_ids.includes(req.params.caseId)) return res.status(403).json({ error: 'Forbidden' });
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const { doc_id, doc_name, doc_category = 'Other' } = req.body;
+  const { doc_id, doc_name, doc_category = 'Other', checklist_item_id } = req.body;
+  const caseId = req.params.caseId;
 
+  // Step 1 — Insert or update the document record
+  let documentRow;
   if (doc_id) {
     db.prepare(`
       UPDATE documents SET status = 'Received', file_path = ?, file_size = ?, mime_type = ?,
       uploaded_by = 'Student', uploaded_at = datetime('now'), updated_at = datetime('now')
       WHERE id = ? AND application_id = ?
-    `).run(req.file.filename, req.file.size, req.file.mimetype, doc_id, req.params.caseId);
-    return res.json(db.prepare('SELECT * FROM documents WHERE id = ?').get(doc_id));
+    `).run(req.file.filename, req.file.size, req.file.mimetype, doc_id, caseId);
+    documentRow = db.prepare('SELECT * FROM documents WHERE id = ?').get(doc_id);
+  } else {
+    const result = db.prepare(`
+      INSERT INTO documents (application_id, doc_name, doc_category, owner, status, file_path, file_size, mime_type, uploaded_by, uploaded_at)
+      VALUES (?, ?, ?, 'Student', 'Received', ?, ?, ?, 'Student', datetime('now'))
+    `).run(caseId, doc_name || req.file.originalname, doc_category, req.file.filename, req.file.size, req.file.mimetype);
+    documentRow = db.prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid);
   }
 
-  const result = db.prepare(`
-    INSERT INTO documents (application_id, doc_name, doc_category, owner, status, file_path, file_size, mime_type, uploaded_by, uploaded_at)
-    VALUES (?, ?, ?, 'Student', 'Received', ?, ?, ?, 'Student', datetime('now'))
-  `).run(req.params.caseId, doc_name || req.file.originalname, doc_category, req.file.filename, req.file.size, req.file.mimetype);
+  // Step 2 — Find matching checklist item (by explicit id, doc_id, or doc_name match)
+  let checklistItem = null;
+  if (checklist_item_id) {
+    checklistItem = db.prepare('SELECT * FROM case_document_checklist_items WHERE id = ? AND case_id = ?').get(checklist_item_id, caseId);
+  } else if (doc_id) {
+    // Try to find checklist item linked to this doc
+    const docName = documentRow?.doc_name;
+    if (docName) {
+      checklistItem = db.prepare(`SELECT * FROM case_document_checklist_items WHERE case_id = ? AND doc_name = ? AND status IN ('PENDING','REQUESTED') LIMIT 1`).get(caseId, docName);
+    }
+  } else if (doc_name) {
+    checklistItem = db.prepare(`SELECT * FROM case_document_checklist_items WHERE case_id = ? AND doc_name = ? AND status IN ('PENDING','REQUESTED') LIMIT 1`).get(caseId, doc_name);
+  }
 
-  res.status(201).json(db.prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid));
+  // Step 3 — Update checklist item status to UPLOADED
+  if (checklistItem) {
+    db.prepare(`UPDATE case_document_checklist_items SET status = 'UPLOADED', uploaded_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(checklistItem.id);
+  }
+
+  // Step 4 — Log timeline entry
+  try {
+    db.prepare(`
+      INSERT INTO status_history (application_id, status, sub_status, awaiting_from, changed_by, entry_type, notes)
+      SELECT id, status, sub_status, awaiting_from, 'Student Portal', 'docs', ?
+      FROM applications WHERE id = ?
+    `).run(`[DOC] Student uploaded: ${documentRow?.doc_name || req.file.originalname}`, caseId);
+  } catch(e) {}
+
+  // Step 5 — Check if any query is now resolved (if the checklist item was query-linked)
+  if (checklistItem?.required_by === 'BANK') {
+    try {
+      // Mark any open query linked to this checklist item as potentially resolvable
+      const pendingQuery = db.prepare(`SELECT id FROM bank_queries WHERE bank_application_id IN (SELECT id FROM bank_applications WHERE case_id = ?) AND status = 'OPEN' LIMIT 1`).get(caseId);
+      if (pendingQuery) {
+        // Don't auto-close — just add a note that student uploaded
+        db.prepare(`UPDATE bank_applications SET updated_at = datetime('now') WHERE case_id = ?`).run(caseId);
+      }
+    } catch(e) {}
+  }
+
+  res.status(201).json({ document: documentRow, checklist_updated: !!checklistItem });
 });
 
 // GET /api/student/case/:caseId/lenders

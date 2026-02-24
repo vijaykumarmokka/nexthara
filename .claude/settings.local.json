@@ -28,7 +28,9 @@
       "Bash(brew services:*)",
       "Bash(psql:*)",
       "Bash(tail:*)",
-      "Bash(cd /Users/vinayreddychetelli/Downloads/starup-spark-hub-main/backend && npx prisma db push 2>&1)"
+      "Bash(cd /Users/vinayreddychetelli/Downloads/starup-spark-hub-main/backend && npx prisma db push 2>&1)",
+      "Bash(head:*)",
+      "Bash(sqlite3:*)"
     ]
   }
 }

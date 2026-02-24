@@ -10,7 +10,7 @@ export default function BankBranchesPage({ bankId, bankRole }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ branch_name: '', region: '', state: '', city: '' });
 
-  const canEdit = bankRole === 'SUPER_ADMIN';
+  const canEdit = bankRole === 'BANK_SUPER_ADMIN';
 
   const load = async () => {
     setLoading(true);

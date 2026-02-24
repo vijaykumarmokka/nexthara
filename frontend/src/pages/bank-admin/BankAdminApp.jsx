@@ -12,14 +12,14 @@ import BankApplicationDetailPage from './BankApplicationDetailPage';
 import BankApiKeysPage from './BankApiKeysPage';
 
 const ROLE_LABELS = {
-  SUPER_ADMIN: 'National Head',
-  REGION_HEAD: 'Region Head',
-  BRANCH_MANAGER: 'Branch Manager',
-  OFFICER: 'Officer',
+  BANK_SUPER_ADMIN:    'National Head',
+  BANK_REGION_HEAD:    'Region Head',
+  BANK_BRANCH_MANAGER: 'Branch Manager',
+  BANK_OFFICER:        'Officer',
 };
 
 const NAV_BY_ROLE = {
-  SUPER_ADMIN: [
+  BANK_SUPER_ADMIN: [
     { key: 'performance', icon: 'fa-chart-bar', label: 'Dashboard' },
     { key: 'applications', icon: 'fa-file-alt', label: 'Applications' },
     { key: 'analytics', icon: 'fa-chart-line', label: 'Analytics' },
@@ -29,20 +29,20 @@ const NAV_BY_ROLE = {
     { key: 'announcements', icon: 'fa-bullhorn', label: 'Announcements' },
     { key: 'api-keys', icon: 'fa-key', label: 'API Keys' },
   ],
-  REGION_HEAD: [
+  BANK_REGION_HEAD: [
     { key: 'performance', icon: 'fa-chart-bar', label: 'Dashboard' },
     { key: 'applications', icon: 'fa-file-alt', label: 'Applications' },
     { key: 'analytics', icon: 'fa-chart-line', label: 'Analytics' },
     { key: 'branches', icon: 'fa-sitemap', label: 'Branches' },
     { key: 'announcements', icon: 'fa-bullhorn', label: 'Announcements' },
   ],
-  BRANCH_MANAGER: [
+  BANK_BRANCH_MANAGER: [
     { key: 'performance', icon: 'fa-chart-bar', label: 'Dashboard' },
     { key: 'applications', icon: 'fa-file-alt', label: 'Applications' },
     { key: 'users', icon: 'fa-users', label: 'Officers' },
     { key: 'announcements', icon: 'fa-bullhorn', label: 'Announcements' },
   ],
-  OFFICER: [
+  BANK_OFFICER: [
     { key: 'performance', icon: 'fa-chart-bar', label: 'Dashboard' },
     { key: 'applications', icon: 'fa-file-alt', label: 'Applications' },
     { key: 'announcements', icon: 'fa-bullhorn', label: 'Announcements' },
@@ -55,9 +55,9 @@ export default function BankAdminApp() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedAppId, setSelectedAppId] = useState(null);
 
-  const bankRole = user?.role || 'OFFICER';
+  const bankRole = user?.role || 'BANK_OFFICER';
   const bankId = user?.bank_id;
-  const navItems = NAV_BY_ROLE[bankRole] || NAV_BY_ROLE.OFFICER;
+  const navItems = NAV_BY_ROLE[bankRole] || NAV_BY_ROLE.BANK_OFFICER;
 
   const sidebarW = sidebarCollapsed ? 60 : 220;
 

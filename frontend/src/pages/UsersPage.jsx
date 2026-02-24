@@ -1,7 +1,18 @@
 import { useState, useEffect } from 'react';
 import { usersApi } from '../api';
-import { BANKS } from '../constants';
 import { formatDate } from '../constants';
+
+const INTERNAL_ROLES = [
+  { value: 'SUPER_ADMIN',    label: 'Super Admin' },
+  { value: 'LOAN_HEAD',      label: 'Loan Head' },
+  { value: 'LOAN_EXECUTIVE', label: 'Loan Executive' },
+];
+
+const ROLE_BADGE = {
+  SUPER_ADMIN:    'badge-blue',
+  LOAN_HEAD:      'badge-purple',
+  LOAN_EXECUTIVE: 'badge-grey',
+};
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -29,7 +40,7 @@ export default function UsersPage() {
       <div className="page-header">
         <div>
           <h2>User Management</h2>
-          <div className="subtitle">Manage portal users and their access</div>
+          <div className="subtitle">Manage internal Nexthara staff accounts and access</div>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditUser(null); setShowModal(true); }}>
           <i className="fas fa-plus"></i> Add User
@@ -46,29 +57,34 @@ export default function UsersPage() {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
-                <th>Bank</th>
+                <th>Branch</th>
                 <th>Status</th>
-                <th>Created</th>
+                <th>Last Login</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {users.map(u => (
                 <tr key={u.id}>
-                  <td><strong>{u.name}</strong></td>
+                  <td>
+                    <strong>{u.full_name || u.name}</strong>
+                    {u.phone_e164 && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.phone_e164}</div>}
+                  </td>
                   <td style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
                   <td>
-                    <span className={`badge ${u.role === 'super_admin' ? 'badge-blue' : 'badge-grey'}`}>
-                      {u.role === 'super_admin' ? 'Super Admin' : 'Bank User'}
+                    <span className={`badge ${ROLE_BADGE[u.role] || 'badge-grey'}`}>
+                      {INTERNAL_ROLES.find(r => r.value === u.role)?.label || u.role}
                     </span>
                   </td>
-                  <td>{u.bank || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                  <td>{u.branch_id || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                   <td>
                     <span className={`badge ${u.is_active ? 'badge-green' : 'badge-red'}`}>
                       {u.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{formatDate(u.created_at)}</td>
+                  <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    {u.last_login_at ? formatDate(u.last_login_at) : '—'}
+                  </td>
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button
@@ -81,7 +97,7 @@ export default function UsersPage() {
                       <button
                         className="btn-icon btn-icon-danger"
                         title="Delete"
-                        onClick={() => handleDelete(u.id, u.name)}
+                        onClick={() => handleDelete(u.id, u.full_name || u.name)}
                       >
                         <i className="fas fa-trash"></i>
                       </button>
@@ -110,11 +126,12 @@ export default function UsersPage() {
 
 function UserModal({ user, onClose, onSaved }) {
   const isEdit = !!user;
-  const [name, setName] = useState(user?.name || '');
+  const [name, setName] = useState(user?.full_name || user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState(user?.role || 'bank_user');
-  const [bank, setBank] = useState(user?.bank || '');
+  const [role, setRole] = useState(user?.role || 'LOAN_EXECUTIVE');
+  const [phone, setPhone] = useState(user?.phone_e164 || '');
+  const [branchId, setBranchId] = useState(user?.branch_id || '');
   const [isActive, setIsActive] = useState(user?.is_active !== undefined ? !!user.is_active : true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -124,7 +141,7 @@ function UserModal({ user, onClose, onSaved }) {
     setError('');
     setSaving(true);
     try {
-      const data = { name, role, bank: role === 'bank_user' ? bank : null };
+      const data = { name, full_name: name, role, phone_e164: phone || null, branch_id: branchId || null };
       if (isEdit) {
         data.is_active = isActive;
         await usersApi.updateUser(user.id, data);
@@ -141,11 +158,17 @@ function UserModal({ user, onClose, onSaved }) {
     }
   }
 
+  const BRANCHES = [
+    { value: 'BRN-HQ',  label: 'Head Office (Hyderabad)' },
+    { value: 'BRN-BLR', label: 'Bangalore Branch' },
+    { value: 'BRN-CLT', label: 'Calicut Branch' },
+  ];
+
   return (
     <div className="modal-overlay show" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 480, height: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{isEdit ? 'Edit User' : 'Add User'}</h3>
+          <h3>{isEdit ? 'Edit User' : 'Add Staff User'}</h3>
           <button className="modal-close" onClick={onClose}><i className="fas fa-times"></i></button>
         </div>
         <form onSubmit={handleSubmit} style={{ padding: 24 }}>
@@ -168,22 +191,26 @@ function UserModal({ user, onClose, onSaved }) {
           )}
 
           <div className="form-group">
+            <label className="form-label">Phone (E.164 format)</label>
+            <input className="form-control" placeholder="+919876543210" value={phone} onChange={e => setPhone(e.target.value)} />
+          </div>
+
+          <div className="form-group">
             <label className="form-label">Role</label>
             <select className="form-control" value={role} onChange={e => setRole(e.target.value)}>
-              <option value="super_admin">Super Admin</option>
-              <option value="bank_user">Bank User</option>
+              {INTERNAL_ROLES.map(r => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
             </select>
           </div>
 
-          {role === 'bank_user' && (
-            <div className="form-group">
-              <label className="form-label">Bank</label>
-              <select className="form-control" value={bank} onChange={e => setBank(e.target.value)} required>
-                <option value="">Select bank...</option>
-                {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
-          )}
+          <div className="form-group">
+            <label className="form-label">Branch</label>
+            <select className="form-control" value={branchId} onChange={e => setBranchId(e.target.value)}>
+              <option value="">Select branch...</option>
+              {BRANCHES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+            </select>
+          </div>
 
           {isEdit && (
             <div className="form-group">

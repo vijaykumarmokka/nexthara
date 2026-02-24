@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { bankAdminApi } from '../../api';
 
-const ROLES = ['SUPER_ADMIN', 'REGION_HEAD', 'BRANCH_MANAGER', 'OFFICER'];
-const ROLE_COLORS = { SUPER_ADMIN: '#7c3aed', REGION_HEAD: '#1565c0', BRANCH_MANAGER: '#0d7377', OFFICER: '#374151' };
-const ROLE_LABELS = { SUPER_ADMIN: 'National Head', REGION_HEAD: 'Region Head', BRANCH_MANAGER: 'Branch Manager', OFFICER: 'Officer' };
+const ROLES = ['BANK_SUPER_ADMIN', 'BANK_REGION_HEAD', 'BANK_BRANCH_MANAGER', 'BANK_OFFICER'];
+const ROLE_COLORS = { BANK_SUPER_ADMIN: '#7c3aed', BANK_REGION_HEAD: '#1565c0', BANK_BRANCH_MANAGER: '#0d7377', BANK_OFFICER: '#374151' };
+const ROLE_LABELS = { BANK_SUPER_ADMIN: 'National Head', BANK_REGION_HEAD: 'Region Head', BANK_BRANCH_MANAGER: 'Branch Manager', BANK_OFFICER: 'Officer' };
 
 export default function BankUsersPage({ bankId, bankRole }) {
   const [users, setUsers] = useState([]);
@@ -14,9 +14,9 @@ export default function BankUsersPage({ bankId, bankRole }) {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'OFFICER', branch_id: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'BANK_OFFICER', branch_id: '', password: '' });
 
-  const canEdit = bankRole === 'SUPER_ADMIN';
+  const canEdit = bankRole === 'BANK_SUPER_ADMIN';
 
   const load = async () => {
     setLoading(true);
@@ -36,7 +36,7 @@ export default function BankUsersPage({ bankId, bankRole }) {
       await bankAdminApi.createUser(bankId, form);
       toast.success('User created');
       setShowModal(false);
-      setForm({ name: '', email: '', phone: '', role: 'OFFICER', branch_id: '', password: '' });
+      setForm({ name: '', email: '', phone: '', role: 'BANK_OFFICER', branch_id: '', password: '' });
       await load();
     } catch (e) { toast.error(e.message); }
     setSaving(false);

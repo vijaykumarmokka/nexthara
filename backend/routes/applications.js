@@ -80,10 +80,10 @@ router.get('/', (req, res) => {
   let where = [];
   let params = {};
 
-  // Bank filter for bank_user role
-  if (req.user.role === 'bank_user') {
-    where.push('bank = @userBank');
-    params.userBank = req.user.bank;
+  // Role-based scoping: LOAN_EXECUTIVE sees only assigned applications
+  if (req.user.role === 'LOAN_EXECUTIVE') {
+    where.push('(assigned_to = @scoped_uid OR assigned_to IS NULL)');
+    params.scoped_uid = req.user.id;
   }
 
   if (search) {
@@ -123,18 +123,19 @@ router.get('/', (req, res) => {
 
 // GET /api/applications/stats — dashboard KPIs
 router.get('/stats', (req, res) => {
-  const bankFilter = req.user.role === 'bank_user' ? `WHERE bank = '${req.user.bank.replace(/'/g, "''")}'` : '';
-  const bankAnd = req.user.role === 'bank_user' ? `AND bank = '${req.user.bank.replace(/'/g, "''")}'` : '';
+  // For LOAN_EXECUTIVE, scope to their assigned cases
+  const execFilter = req.user.role === 'LOAN_EXECUTIVE' ? `WHERE (assigned_to = '${req.user.id.replace(/'/g, "''")}' OR assigned_to IS NULL)` : '';
+  const execAnd    = req.user.role === 'LOAN_EXECUTIVE' ? `AND (assigned_to = '${req.user.id.replace(/'/g, "''")}' OR assigned_to IS NULL)` : '';
 
-  const total = db.prepare(`SELECT COUNT(*) as c FROM applications ${bankFilter}`).get().c;
-  const sanctioned = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE status IN ('SANCTIONED','CONDITIONAL_SANCTION','SANCTION_ACCEPTED','AGREEMENT_SIGNED','DISBURSEMENT_PENDING','DISBURSED','CLOSED') ${bankAnd}`).get().c;
-  const pending = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from IN ('Student','Bank','Nexthara') AND status NOT IN ('CLOSED','DROPPED','EXPIRED','REJECTED','LOGIN_REJECTED') ${bankAnd}`).get().c;
-  const rejected = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE status IN ('REJECTED','LOGIN_REJECTED','DROPPED','EXPIRED') ${bankAnd}`).get().c;
-  const slaBreach = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE ${SLA_BREACH_EXPR} ${bankAnd}`).get().c;
-  const slaWarning = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE ${SLA_WARNING_EXPR} ${bankAnd}`).get().c;
-  const awaitingStudent = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from = 'Student' ${bankAnd}`).get().c;
-  const awaitingBank = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from = 'Bank' ${bankAnd}`).get().c;
-  const awaitingNexthara = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from = 'Nexthara' ${bankAnd}`).get().c;
+  const total = db.prepare(`SELECT COUNT(*) as c FROM applications ${execFilter}`).get().c;
+  const sanctioned = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE status IN ('SANCTIONED','CONDITIONAL_SANCTION','SANCTION_ACCEPTED','AGREEMENT_SIGNED','DISBURSEMENT_PENDING','DISBURSED','CLOSED') ${execAnd}`).get().c;
+  const pending = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from IN ('Student','Bank','Nexthara') AND status NOT IN ('CLOSED','DROPPED','EXPIRED','REJECTED','LOGIN_REJECTED') ${execAnd}`).get().c;
+  const rejected = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE status IN ('REJECTED','LOGIN_REJECTED','DROPPED','EXPIRED') ${execAnd}`).get().c;
+  const slaBreach = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE ${SLA_BREACH_EXPR} ${execAnd}`).get().c;
+  const slaWarning = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE ${SLA_WARNING_EXPR} ${execAnd}`).get().c;
+  const awaitingStudent = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from = 'Student' ${execAnd}`).get().c;
+  const awaitingBank = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from = 'Bank' ${execAnd}`).get().c;
+  const awaitingNexthara = db.prepare(`SELECT COUNT(*) as c FROM applications WHERE awaiting_from = 'Nexthara' ${execAnd}`).get().c;
 
   res.json({ total, sanctioned, pending, rejected, slaBreach, slaWarning, awaitingStudent, awaitingBank, awaitingNexthara });
 });
@@ -244,8 +245,15 @@ router.put('/:id', (req, res) => {
   const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(req.params.id);
   if (!app) return res.status(404).json({ error: 'Application not found' });
 
-  if (req.user.role === 'bank_user' && app.bank !== req.user.bank) {
-    return res.status(403).json({ error: 'Forbidden' });
+  // LOAN_EXECUTIVE can only edit their assigned cases
+  if (req.user.role === 'LOAN_EXECUTIVE' && app.assigned_to && app.assigned_to !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden: not your assigned case' });
+  }
+
+  // Frozen 24-status enum validation
+  const FROZEN_STATUSES = ['NOT_CONNECTED','CONTACTED','YET_TO_CONNECT','LOGIN_SUBMITTED','LOGIN_IN_PROGRESS','LOGIN_REJECTED','DUPLICATE_LOGIN','DOCS_PENDING','DOCS_SUBMITTED','DOCS_VERIFICATION','UNDER_REVIEW','CREDIT_CHECK_IN_PROGRESS','FIELD_VERIFICATION','QUERY_RAISED','CONDITIONAL_SANCTION','SANCTIONED','REJECTED','SANCTION_ACCEPTED','AGREEMENT_SIGNED','DISBURSEMENT_PENDING','DISBURSED','CLOSED','DROPPED','EXPIRED'];
+  if (req.body.status !== undefined && !FROZEN_STATUSES.includes(req.body.status)) {
+    return res.status(400).json({ error: `Invalid status. Must be one of: ${FROZEN_STATUSES.join(', ')}` });
   }
 
   const {

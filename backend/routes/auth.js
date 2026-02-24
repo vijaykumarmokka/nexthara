@@ -23,7 +23,22 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
-  const payload = { id: user.id, name: user.name, email: user.email, role: user.role, bank: user.bank };
+  // Update last_login_at
+  try {
+    db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(user.id);
+  } catch(e) {}
+
+  const payload = {
+    id: user.id,
+    name: user.name,
+    full_name: user.full_name || user.name,
+    email: user.email,
+    role: user.role,
+    bank: user.bank,
+    phone_e164: user.phone_e164 || null,
+    organization_id: user.organization_id || null,
+    branch_id: user.branch_id || null,
+  };
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
 
   res.json({ token, user: payload });

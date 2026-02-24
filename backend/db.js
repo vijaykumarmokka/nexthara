@@ -1619,5 +1619,117 @@ try { db.exec(`ALTER TABLE documents ADD COLUMN quality TEXT DEFAULT 'OK'`); } c
 // Lender conditions / special terms field
 try { db.exec(`ALTER TABLE applications ADD COLUMN lender_conditions TEXT`); } catch(e) {}
 
+// ── FIX #1: Internal Users & Roles Migration ─────────────────────────────────
+// Add new columns to users table
+const existingUserCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+const newUserCols = [
+  ['organization_id', 'TEXT'],
+  ['branch_id', 'TEXT'],
+  ['full_name', 'TEXT'],
+  ['phone_e164', 'TEXT'],
+  ['last_login_at', 'TEXT'],
+];
+for (const [col, def] of newUserCols) {
+  if (!existingUserCols.includes(col)) {
+    try { db.exec(`ALTER TABLE users ADD COLUMN ${col} ${def}`); } catch(e) {}
+  }
+}
+
+// Seed Nexthara internal organization
+try {
+  db.prepare(`INSERT OR IGNORE INTO organizations (id, name, status, plan_id) VALUES ('ORG-NEXTHARA', 'Nexthara', 'ACTIVE', 'ENTERPRISE')`).run();
+} catch(e) {}
+
+// Seed internal Nexthara branches
+const nexthara_branches = [
+  ['BRN-HQ',  'ORG-NEXTHARA', 'Head Office',      'Hyderabad'],
+  ['BRN-BLR', 'ORG-NEXTHARA', 'Bangalore Branch', 'Bangalore'],
+  ['BRN-CLT', 'ORG-NEXTHARA', 'Calicut Branch',   'Calicut'],
+];
+for (const [id, org_id, name, city] of nexthara_branches) {
+  try { db.prepare(`INSERT OR IGNORE INTO branches (id, organization_id, name, city) VALUES (?, ?, ?, ?)`).run(id, org_id, name, city); } catch(e) {}
+}
+
+// Migrate role values to frozen enum: SUPER_ADMIN / LOAN_HEAD / LOAN_EXECUTIVE
+try {
+  const existingRoles = db.prepare("SELECT DISTINCT role FROM users").all().map(r => r.role);
+  if (existingRoles.some(r => r === 'super_admin' || !['SUPER_ADMIN', 'LOAN_HEAD', 'LOAN_EXECUTIVE'].includes(r))) {
+    db.exec(`UPDATE users SET role = 'SUPER_ADMIN' WHERE role = 'super_admin'`);
+    db.exec(`UPDATE users SET role = 'LOAN_EXECUTIVE' WHERE role NOT IN ('SUPER_ADMIN', 'LOAN_HEAD', 'LOAN_EXECUTIVE')`);
+  }
+  // Back-fill organization_id + full_name for existing users
+  db.exec(`UPDATE users SET organization_id = 'ORG-NEXTHARA' WHERE organization_id IS NULL`);
+  db.exec(`UPDATE users SET full_name = name WHERE full_name IS NULL`);
+} catch(e) {}
+
+// ── FIX #3: Bank Portal Users — add hierarchy columns ────────────────────────
+const existingBpuCols = db.prepare("PRAGMA table_info(bank_portal_users)").all().map(c => c.name);
+const newBpuCols = [
+  ['is_portal_active',    'INTEGER DEFAULT 1'],
+  ['is_waba_registered',  'INTEGER DEFAULT 0'],
+  ['officer_name',        'TEXT'],
+  ['phone_e164',          'TEXT'],
+];
+for (const [col, def] of newBpuCols) {
+  if (!existingBpuCols.includes(col)) {
+    try { db.exec(`ALTER TABLE bank_portal_users ADD COLUMN ${col} ${def}`); } catch(e) {}
+  }
+}
+
+// Migrate bank_portal_users roles from V1 to V2 hierarchy roles
+try {
+  const existingBpuRoles = db.prepare("SELECT DISTINCT role FROM bank_portal_users").all().map(r => r.role);
+  if (existingBpuRoles.some(r => !r.startsWith('BANK_'))) {
+    db.exec(`UPDATE bank_portal_users SET role = 'BANK_SUPER_ADMIN'    WHERE role IN ('SUPER_ADMIN', 'BANK_ADMIN', 'ADMIN')`);
+    db.exec(`UPDATE bank_portal_users SET role = 'BANK_REGION_HEAD'    WHERE role = 'REGION_HEAD'`);
+    db.exec(`UPDATE bank_portal_users SET role = 'BANK_BRANCH_MANAGER' WHERE role IN ('BRANCH_MANAGER', 'BANK_CREDIT')`);
+    db.exec(`UPDATE bank_portal_users SET role = 'BANK_OFFICER'        WHERE role IN ('OFFICER', 'BANK_RM', 'BANK_OPS')`);
+  }
+  // Back-fill is_portal_active
+  db.exec(`UPDATE bank_portal_users SET is_portal_active = 1 WHERE is_portal_active IS NULL AND password_hash IS NOT NULL`);
+} catch(e) {}
+
+// bank_regions: add states column
+try {
+  const bRegCols = db.prepare("PRAGMA table_info(bank_regions)").all().map(c => c.name);
+  if (!bRegCols.includes('states')) db.exec(`ALTER TABLE bank_regions ADD COLUMN states TEXT DEFAULT '[]'`);
+} catch(e) {}
+
+// bank_applications: add missing columns for frozen status enum
+try {
+  const bappCols = db.prepare("PRAGMA table_info(bank_applications)").all().map(c => c.name);
+  const missingBappCols = [
+    ['main_status',         "TEXT DEFAULT 'NOT_CONNECTED'"],
+    ['close_reason_code',   'TEXT'],
+    ['close_reason_text',   'TEXT'],
+    ['sla_started_at',      'TEXT'],
+    ['sla_state',           "TEXT DEFAULT 'OK'"],
+    ['last_updated_by_type','TEXT'],
+    ['roi_percent',         'REAL'],
+    ['tenure_months',       'INTEGER'],
+    ['processing_fee_paise','INTEGER'],
+    ['margin_percent',      'REAL'],
+    ['conditions',          'TEXT'],
+    ['bank_application_ref','TEXT'],
+  ];
+  for (const [col, def] of missingBappCols) {
+    if (!bappCols.includes(col)) {
+      try { db.exec(`ALTER TABLE bank_applications ADD COLUMN ${col} ${def}`); } catch(e) {}
+    }
+  }
+  // Sync main_status from status for all rows (handles default 'NOT_CONNECTED' set by ALTER TABLE)
+  db.exec(`UPDATE bank_applications SET main_status = status WHERE main_status != status OR main_status IS NULL`);
+  // Fix any legacy INITIATED status → NOT_CONNECTED
+  db.exec(`UPDATE bank_applications SET main_status = 'NOT_CONNECTED', status = 'NOT_CONNECTED' WHERE status = 'INITIATED' OR main_status = 'INITIATED'`);
+} catch(e) {}
+
+// applications table: add winner bank tracking for offer comparison
+try { db.exec(`ALTER TABLE applications ADD COLUMN winner_bank_application_id TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE applications ADD COLUMN case_stage TEXT DEFAULT 'NEW'`); } catch(e) {}
+try { db.exec(`ALTER TABLE applications ADD COLUMN readiness_score INTEGER DEFAULT 0`); } catch(e) {}
+
+// leads table: add assigned_user_id column (user-scoped, linking to users.id)
+try { db.exec(`ALTER TABLE leads ADD COLUMN assigned_user_id TEXT`); } catch(e) {}
+
 export default db;
 

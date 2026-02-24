@@ -559,7 +559,7 @@ export default function BankApplicationDetailPage({ appId, bankId, bankRole, onB
                       <div style={{ fontSize: 11, color: '#9ca3af' }}>
                         Uploaded by {p.uploaded_by_name || p.uploaded_by_actor_type} · {p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : ''}
                       </div>
-                      {p.status === 'PENDING_VERIFY' && ['SUPER_ADMIN','REGION_HEAD','BRANCH_MANAGER'].includes(bankRole) && (
+                      {p.status === 'PENDING_VERIFY' && ['BANK_SUPER_ADMIN','BANK_REGION_HEAD','BANK_BRANCH_MANAGER'].includes(bankRole) && (
                         <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
                           <button onClick={async () => { await bankAdminApi.verifyProof(p.id, { status: 'VERIFIED' }); fetchAll(); }}
                             style={{ flex: 1, padding: '5px 0', background: '#d1fae5', color: '#065f46', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>

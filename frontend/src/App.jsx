@@ -71,9 +71,14 @@ export default function App() {
 
   // Set correct default view based on user role after login
   const BANK_USER_VIEWS = ['dashboard', 'applications', 'queries', 'sanctions', 'disbursements', 'reports'];
+  const EXEC_VIEWS = ['leads', 'dashboard', 'applications', 'leads-analytics'];
   useEffect(() => {
     if (user?.role === 'bank_user' && !BANK_USER_VIEWS.includes(activeView)) {
       setActiveView('dashboard');
+    }
+    // LOAN_EXECUTIVE: restrict to their allowed views
+    if (user?.role === 'LOAN_EXECUTIVE' && !EXEC_VIEWS.includes(activeView)) {
+      setActiveView('leads');
     }
   }, [user]);
 
@@ -99,10 +104,12 @@ export default function App() {
     return params;
   }, [filters, activeFilter, page]);
 
-  // Fetch applications (super_admin views only)
+  // Fetch applications (internal CRM views only)
   const APP_VIEWS = ['dashboard', 'applications', 'pipeline'];
   useEffect(() => {
     if (!isAuthenticated || user?.role === 'bank_user') return;
+    // Bank portal users have their own API — skip here
+    if (['BANK_SUPER_ADMIN','BANK_REGION_HEAD','BANK_BRANCH_MANAGER','BANK_OFFICER'].includes(user?.role)) return;
     if (!APP_VIEWS.includes(activeView)) return;
     const params = buildParams();
     api.getApplications(params).then(res => {
@@ -139,11 +146,13 @@ export default function App() {
   if (!isAuthenticated) return <LoginPage />;
 
   // ─────────────────────────────────────────────
-  // SUPER ADMIN MASTER BRAIN
+  // SUPER ADMIN MASTER BRAIN (SUPER_ADMIN only)
   // ─────────────────────────────────────────────
-  if (user?.role === 'super_admin') {
+  if (user?.role === 'SUPER_ADMIN') {
     return <SuperAdminApp />;
   }
+
+  // LOAN_HEAD + LOAN_EXECUTIVE → fall through to regular CRM view below
 
   // ─────────────────────────────────────────────
   // BANK ADMIN PORTAL (NBPP)

@@ -221,6 +221,12 @@ router.get('/', (req, res) => {
   const where = [];
   const params = {};
 
+  // Role-based scoping: LOAN_EXECUTIVE sees only their assigned leads
+  if (req.user?.role === 'LOAN_EXECUTIVE') {
+    where.push('(l.assigned_user_id = @scoped_user_id OR l.assigned_staff_id = @scoped_user_id)');
+    params.scoped_user_id = req.user.id;
+  }
+
   if (search)              { where.push(`(l.full_name LIKE @search OR l.phone_e164 LIKE @search OR l.email LIKE @search)`); params.search = `%${search}%`; }
   if (stage)               { where.push('l.stage = @stage');                          params.stage = stage; }
   if (source)              { where.push('l.source = @source');                        params.source = source; }

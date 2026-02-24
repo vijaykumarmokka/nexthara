@@ -228,7 +228,7 @@ export default function BankPerformancePage({ bankId, bankRole, onOpenApp }) {
       )}
 
       {/* Branch / Region Performance Table */}
-      {(['SUPER_ADMIN','REGION_HEAD'].includes(bankRole)) && (
+      {(['BANK_SUPER_ADMIN','BANK_REGION_HEAD'].includes(bankRole)) && (
         <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden', marginBottom: 16 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>

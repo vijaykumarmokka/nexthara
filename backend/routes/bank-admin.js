@@ -44,6 +44,11 @@ router.post('/auth/login', async (req, res) => {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
+  // Check portal access flag
+  if (user.is_portal_active === 0) {
+    return res.status(403).json({ error: 'Portal access is disabled for this account. Contact your bank administrator.' });
+  }
+
   const bank = db.prepare('SELECT id, name, logo_url, country FROM banks WHERE id = ?').get(user.bank_id);
 
   const token = jwt.sign(
@@ -77,7 +82,7 @@ router.get('/auth/me', requireBankAuth, (req, res) => {
 // GET /api/bank-admin/banks
 router.get('/banks', requireBankAuth, (req, res) => {
   const { bank_role, bank_id } = req.bankUser;
-  if (bank_role === 'SUPER_ADMIN') {
+  if (bank_role === 'BANK_SUPER_ADMIN') {
     // SUPER_ADMIN sees only their own bank
     const bank = db.prepare('SELECT * FROM banks WHERE id = ?').get(bank_id);
     return res.json([bank].filter(Boolean));
@@ -87,7 +92,7 @@ router.get('/banks', requireBankAuth, (req, res) => {
 });
 
 // POST /api/bank-admin/banks (Nexthara admin can create banks via seeding; bank users manage their own)
-router.post('/banks', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/banks', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const { name, logo_url, country, default_sla_days } = req.body;
   if (!name) return res.status(400).json({ error: 'Bank name required' });
   const id = uuidv4();
@@ -104,7 +109,7 @@ router.get('/banks/:id', requireBankAuth, (req, res) => {
 });
 
 // PUT /api/bank-admin/banks/:id
-router.put('/banks/:id', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.put('/banks/:id', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.id) return res.status(403).json({ error: 'Forbidden' });
   const { name, logo_url, country, default_sla_days, is_active } = req.body;
   db.prepare('UPDATE banks SET name=COALESCE(?,name), logo_url=COALESCE(?,logo_url), country=COALESCE(?,country), default_sla_days=COALESCE(?,default_sla_days), is_active=COALESCE(?,is_active) WHERE id=?')
@@ -120,7 +125,7 @@ router.get('/banks/:bankId/products', requireBankAuth, (req, res) => {
   res.json(products);
 });
 
-router.post('/banks/:bankId/products', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/banks/:bankId/products', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { product_name, loan_type, min_amount_paise, max_amount_paise, interest_range, tenure_range, processing_fee_percent, collateral_required, coapp_required, countries_supported } = req.body;
   if (!product_name) return res.status(400).json({ error: 'Product name required' });
@@ -139,7 +144,7 @@ router.get('/products/:productId', requireBankAuth, (req, res) => {
   res.json({ ...product, criteria, documents });
 });
 
-router.put('/products/:productId', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.put('/products/:productId', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const product = db.prepare('SELECT * FROM bank_products WHERE id = ?').get(req.params.productId);
   if (!product || product.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { product_name, loan_type, min_amount_paise, max_amount_paise, interest_range, tenure_range, processing_fee_percent, collateral_required, coapp_required, countries_supported, is_active } = req.body;
@@ -148,7 +153,7 @@ router.put('/products/:productId', requireBankAuth, requireRole('SUPER_ADMIN'), 
   res.json({ message: 'Updated' });
 });
 
-router.delete('/products/:productId', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.delete('/products/:productId', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const product = db.prepare('SELECT * FROM bank_products WHERE id = ?').get(req.params.productId);
   if (!product || product.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM bank_product_criteria WHERE product_id = ?').run(req.params.productId);
@@ -165,7 +170,7 @@ router.get('/products/:productId/criteria', requireBankAuth, (req, res) => {
   res.json(db.prepare('SELECT * FROM bank_product_criteria WHERE product_id = ?').all(req.params.productId));
 });
 
-router.post('/products/:productId/criteria', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/products/:productId/criteria', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const product = db.prepare('SELECT * FROM bank_products WHERE id = ?').get(req.params.productId);
   if (!product || product.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { criteria_type, criteria_value } = req.body;
@@ -175,7 +180,7 @@ router.post('/products/:productId/criteria', requireBankAuth, requireRole('SUPER
   res.json({ id, message: 'Criterion added' });
 });
 
-router.delete('/criteria/:id', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.delete('/criteria/:id', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const criterion = db.prepare('SELECT bpc.*, bp.bank_id FROM bank_product_criteria bpc JOIN bank_products bp ON bpc.product_id = bp.id WHERE bpc.id = ?').get(req.params.id);
   if (!criterion || criterion.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM bank_product_criteria WHERE id = ?').run(req.params.id);
@@ -190,7 +195,7 @@ router.get('/products/:productId/documents', requireBankAuth, (req, res) => {
   res.json(db.prepare('SELECT * FROM bank_product_documents WHERE product_id = ? ORDER BY order_no').all(req.params.productId));
 });
 
-router.post('/products/:productId/documents', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/products/:productId/documents', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const product = db.prepare('SELECT * FROM bank_products WHERE id = ?').get(req.params.productId);
   if (!product || product.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { doc_code, mandatory, order_no } = req.body;
@@ -200,7 +205,7 @@ router.post('/products/:productId/documents', requireBankAuth, requireRole('SUPE
   res.json({ id, message: 'Document added' });
 });
 
-router.delete('/product-documents/:id', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.delete('/product-documents/:id', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const doc = db.prepare('SELECT bpd.*, bp.bank_id FROM bank_product_documents bpd JOIN bank_products bp ON bpd.product_id = bp.id WHERE bpd.id = ?').get(req.params.id);
   if (!doc || doc.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM bank_product_documents WHERE id = ?').run(req.params.id);
@@ -215,7 +220,7 @@ router.get('/banks/:bankId/branches', requireBankAuth, (req, res) => {
   res.json(branches);
 });
 
-router.post('/banks/:bankId/branches', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/banks/:bankId/branches', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { branch_name, region, state, city } = req.body;
   if (!branch_name) return res.status(400).json({ error: 'branch_name required' });
@@ -224,7 +229,7 @@ router.post('/banks/:bankId/branches', requireBankAuth, requireRole('SUPER_ADMIN
   res.json({ id, message: 'Branch created' });
 });
 
-router.put('/branches/:id', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.put('/branches/:id', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const branch = db.prepare('SELECT * FROM bank_branches WHERE id = ?').get(req.params.id);
   if (!branch || branch.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { branch_name, region, state, city, is_active } = req.body;
@@ -235,7 +240,7 @@ router.put('/branches/:id', requireBankAuth, requireRole('SUPER_ADMIN'), (req, r
 
 // ─── Bank Portal Users ────────────────────────────────────────────────────────
 
-router.get('/banks/:bankId/users', requireBankAuth, requireRole('SUPER_ADMIN', 'REGION_HEAD'), (req, res) => {
+router.get('/banks/:bankId/users', requireBankAuth, requireRole('BANK_SUPER_ADMIN', 'BANK_REGION_HEAD'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const users = db.prepare(`
     SELECT bpu.id, bpu.name, bpu.email, bpu.phone, bpu.role, bpu.branch_id, bpu.is_active, bpu.created_at,
@@ -248,11 +253,11 @@ router.get('/banks/:bankId/users', requireBankAuth, requireRole('SUPER_ADMIN', '
   res.json(users);
 });
 
-router.post('/banks/:bankId/users', requireBankAuth, requireRole('SUPER_ADMIN'), async (req, res) => {
+router.post('/banks/:bankId/users', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), async (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { name, email, phone, role, branch_id, password, assigned_states } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'name, email, password required' });
-  const validRoles = ['SUPER_ADMIN', 'REGION_HEAD', 'BRANCH_MANAGER', 'OFFICER'];
+  const validRoles = ['BANK_SUPER_ADMIN', 'BANK_REGION_HEAD', 'BANK_BRANCH_MANAGER', 'BANK_OFFICER'];
   if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id FROM bank_portal_users WHERE email = ?').get(email.toLowerCase());
   if (existing) return res.status(400).json({ error: 'Email already exists' });
@@ -263,7 +268,7 @@ router.post('/banks/:bankId/users', requireBankAuth, requireRole('SUPER_ADMIN'),
   res.json({ id, message: 'User created' });
 });
 
-router.put('/bank-users/:id', requireBankAuth, requireRole('SUPER_ADMIN'), async (req, res) => {
+router.put('/bank-users/:id', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), async (req, res) => {
   const user = db.prepare('SELECT * FROM bank_portal_users WHERE id = ?').get(req.params.id);
   if (!user || user.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { name, phone, role, branch_id, is_active, assigned_states, password } = req.body;
@@ -282,7 +287,7 @@ router.get('/banks/:bankId/announcements', requireBankAuth, (req, res) => {
   res.json(items);
 });
 
-router.post('/banks/:bankId/announcements', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/banks/:bankId/announcements', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { title, description, attachment_url, visible_to } = req.body;
   if (!title) return res.status(400).json({ error: 'title required' });
@@ -292,7 +297,7 @@ router.post('/banks/:bankId/announcements', requireBankAuth, requireRole('SUPER_
   res.json({ id, message: 'Announcement created' });
 });
 
-router.delete('/announcements/:id', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.delete('/announcements/:id', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const ann = db.prepare('SELECT * FROM bank_announcements WHERE id = ?').get(req.params.id);
   if (!ann || ann.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM bank_announcements WHERE id = ?').run(req.params.id);
@@ -301,12 +306,12 @@ router.delete('/announcements/:id', requireBankAuth, requireRole('SUPER_ADMIN'),
 
 // ─── API Keys ─────────────────────────────────────────────────────────────────
 
-router.get('/banks/:bankId/api-keys', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.get('/banks/:bankId/api-keys', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   res.json(db.prepare('SELECT id, label, api_key, is_active, created_at FROM bank_api_keys WHERE bank_id = ? ORDER BY created_at DESC').all(req.params.bankId));
 });
 
-router.post('/banks/:bankId/api-keys', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/banks/:bankId/api-keys', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { label } = req.body;
   const id = uuidv4();
@@ -315,7 +320,7 @@ router.post('/banks/:bankId/api-keys', requireBankAuth, requireRole('SUPER_ADMIN
   res.json({ id, api_key, message: 'API key generated' });
 });
 
-router.patch('/api-keys/:id/toggle', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.patch('/api-keys/:id/toggle', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const key = db.prepare('SELECT * FROM bank_api_keys WHERE id = ?').get(req.params.id);
   if (!key || key.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   db.prepare('UPDATE bank_api_keys SET is_active = ? WHERE id = ?').run(key.is_active ? 0 : 1, req.params.id);
@@ -366,7 +371,7 @@ router.get('/banks/:bankId/dashboard', requireBankAuth, (req, res) => {
 
 // ─── Advanced Analytics ───────────────────────────────────────────────────────
 
-router.get('/banks/:bankId/analytics', requireBankAuth, requireRole('SUPER_ADMIN', 'REGION_HEAD'), (req, res) => {
+router.get('/banks/:bankId/analytics', requireBankAuth, requireRole('BANK_SUPER_ADMIN', 'BANK_REGION_HEAD'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const bankName = db.prepare('SELECT name FROM banks WHERE id = ?').get(req.params.bankId)?.name;
   const bankAnd = `AND bank = '${(bankName || '').replace(/'/g, "''")}'`;
@@ -425,7 +430,7 @@ router.get('/banks/:bankId/analytics', requireBankAuth, requireRole('SUPER_ADMIN
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
-router.get('/banks/:bankId/audit-log', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.get('/banks/:bankId/audit-log', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { limit = 50, offset = 0 } = req.query;
   const events = db.prepare('SELECT * FROM bank_application_events WHERE bank_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?').all(req.params.bankId, parseInt(limit), parseInt(offset));
@@ -458,7 +463,7 @@ router.get('/banks/:bankId/regions', requireBankAuth, (req, res) => {
   res.json(db.prepare('SELECT * FROM bank_regions WHERE bank_id = ? ORDER BY region_name').all(req.params.bankId));
 });
 
-router.post('/banks/:bankId/regions', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/banks/:bankId/regions', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { region_name } = req.body;
   if (!region_name) return res.status(400).json({ error: 'region_name required' });
@@ -478,10 +483,10 @@ router.get('/banks/:bankId/bank-applications', requireBankAuth, (req, res) => {
   const params = [req.params.bankId];
 
   // Role-based scoping
-  if (bank_role === 'OFFICER') {
+  if (bank_role === 'BANK_OFFICER') {
     where.push('ba.assigned_to_bank_user_id = ?');
     params.push(userId);
-  } else if (bank_role === 'BRANCH_MANAGER' && userBranchId) {
+  } else if (bank_role === 'BANK_BRANCH_MANAGER' && userBranchId) {
     where.push('ba.bank_branch_id = ?');
     params.push(userBranchId);
   }
@@ -517,7 +522,7 @@ router.get('/banks/:bankId/bank-applications', requireBankAuth, (req, res) => {
   res.json({ applications: apps, total });
 });
 
-router.post('/banks/:bankId/bank-applications', requireBankAuth, requireRole('SUPER_ADMIN', 'REGION_HEAD', 'BRANCH_MANAGER'), (req, res) => {
+router.post('/banks/:bankId/bank-applications', requireBankAuth, requireRole('BANK_SUPER_ADMIN', 'BANK_REGION_HEAD', 'BANK_BRANCH_MANAGER'), (req, res) => {
   if (req.bankUser.bank_id !== req.params.bankId) return res.status(403).json({ error: 'Forbidden' });
   const { case_id, bank_product_id, bank_branch_id, student_name, student_phone, student_email, country, university, course, intake, loan_amount_paise, assigned_to_bank_user_id, sla_days } = req.body;
   if (!student_name) return res.status(400).json({ error: 'student_name required' });
@@ -551,17 +556,33 @@ router.get('/bank-applications/:id', requireBankAuth, (req, res) => {
 router.patch('/bank-applications/:id/status', requireBankAuth, (req, res) => {
   const app = db.prepare('SELECT * FROM bank_applications WHERE id = ?').get(req.params.id);
   if (!app || app.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
-  const { status, awaiting_from, sanction_amount_paise, disbursed_amount_paise, roi_final, rejection_reason, notes } = req.body;
+  const { status, awaiting_from, sanction_amount_paise, disbursed_amount_paise, roi_final, rejection_reason, notes, close_reason_code, close_reason_text } = req.body;
   if (!status) return res.status(400).json({ error: 'status required' });
-  const validStatuses = ['INITIATED','DOCS_PENDING','LOGIN_DONE','UNDER_REVIEW','SANCTIONED','REJECTED','DISBURSED','CLOSED'];
-  if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  // Frozen 24-status enum — do NOT add custom values
+  const FROZEN_STATUSES = [
+    'NOT_CONNECTED','CONTACTED','YET_TO_CONNECT',
+    'LOGIN_SUBMITTED','LOGIN_IN_PROGRESS','LOGIN_REJECTED','DUPLICATE_LOGIN',
+    'DOCS_PENDING','DOCS_SUBMITTED','DOCS_VERIFICATION',
+    'UNDER_REVIEW','CREDIT_CHECK','FIELD_VERIFICATION',
+    'QUERY_RAISED','CONDITIONAL_SANCTION','SANCTIONED','REJECTED',
+    'SANCTION_ACCEPTED','AGREEMENT_SIGNED',
+    'DISBURSEMENT_PENDING','DISBURSED',
+    'CLOSED','DROPPED','EXPIRED',
+  ];
+  if (!FROZEN_STATUSES.includes(status)) return res.status(400).json({ error: `Invalid status. Must be one of: ${FROZEN_STATUSES.join(', ')}` });
   db.prepare(`
-    UPDATE bank_applications SET status=?, awaiting_from=COALESCE(?,awaiting_from),
-      sanction_amount_paise=COALESCE(?,sanction_amount_paise), disbursed_amount_paise=COALESCE(?,disbursed_amount_paise),
-      roi_final=COALESCE(?,roi_final), rejection_reason=COALESCE(?,rejection_reason),
+    UPDATE bank_applications SET
+      status=?, main_status=?,
+      awaiting_from=COALESCE(?,awaiting_from),
+      sanction_amount_paise=COALESCE(?,sanction_amount_paise),
+      disbursed_amount_paise=COALESCE(?,disbursed_amount_paise),
+      roi_final=COALESCE(?,roi_final),
+      rejection_reason=COALESCE(?,rejection_reason),
+      close_reason_code=COALESCE(?,close_reason_code),
+      close_reason_text=COALESCE(?,close_reason_text),
       last_bank_update_at=datetime('now'), updated_at=datetime('now')
     WHERE id=?
-  `).run(status, awaiting_from ?? null, sanction_amount_paise ?? null, disbursed_amount_paise ?? null, roi_final ?? null, rejection_reason ?? null, req.params.id);
+  `).run(status, status, awaiting_from ?? null, sanction_amount_paise ?? null, disbursed_amount_paise ?? null, roi_final ?? null, rejection_reason ?? null, close_reason_code ?? null, close_reason_text ?? null, req.params.id);
   db.prepare('INSERT INTO bank_application_events (id, bank_id, user_id, event_type, entity_id, details) VALUES (?, ?, ?, ?, ?, ?)').run(
     uuidv4(), app.bank_id, req.bankUser.id, 'STATUS_CHANGE', req.params.id,
     JSON.stringify({ from: app.status, to: status, by: req.bankUser.name, notes: notes || null })
@@ -569,10 +590,18 @@ router.patch('/bank-applications/:id/status', requireBankAuth, (req, res) => {
 
   // Sync bank status back to CRM application if this bank_application is linked to a CRM case
   if (app.case_id) {
+    // Map bank application status → CRM application status (1-to-1 for frozen enum)
     const BANK_TO_CRM = {
-      INITIATED: 'NOT_CONNECTED', DOCS_PENDING: 'DOCS_PENDING', LOGIN_DONE: 'LOGIN_SUBMITTED',
-      UNDER_REVIEW: 'UNDER_REVIEW', SANCTIONED: 'SANCTIONED', REJECTED: 'REJECTED',
-      DISBURSED: 'DISBURSED', CLOSED: 'CLOSED',
+      NOT_CONNECTED: 'NOT_CONNECTED', CONTACTED: 'CONTACTED', YET_TO_CONNECT: 'YET_TO_CONNECT',
+      LOGIN_SUBMITTED: 'LOGIN_SUBMITTED', LOGIN_IN_PROGRESS: 'LOGIN_IN_PROGRESS',
+      LOGIN_REJECTED: 'LOGIN_REJECTED', DUPLICATE_LOGIN: 'DUPLICATE_LOGIN',
+      DOCS_PENDING: 'DOCS_PENDING', DOCS_SUBMITTED: 'DOCS_SUBMITTED', DOCS_VERIFICATION: 'DOCS_VERIFICATION',
+      UNDER_REVIEW: 'UNDER_REVIEW', CREDIT_CHECK: 'CREDIT_CHECK_IN_PROGRESS',
+      FIELD_VERIFICATION: 'FIELD_VERIFICATION', QUERY_RAISED: 'QUERY_RAISED',
+      CONDITIONAL_SANCTION: 'CONDITIONAL_SANCTION', SANCTIONED: 'SANCTIONED', REJECTED: 'REJECTED',
+      SANCTION_ACCEPTED: 'SANCTION_ACCEPTED', AGREEMENT_SIGNED: 'AGREEMENT_SIGNED',
+      DISBURSEMENT_PENDING: 'DISBURSEMENT_PENDING', DISBURSED: 'DISBURSED',
+      CLOSED: 'CLOSED', DROPPED: 'DROPPED', EXPIRED: 'EXPIRED',
     };
     const crmStatus = BANK_TO_CRM[status];
     if (crmStatus) {
@@ -593,7 +622,7 @@ router.patch('/bank-applications/:id/status', requireBankAuth, (req, res) => {
   res.json({ message: 'Status updated' });
 });
 
-router.patch('/bank-applications/:id/assign', requireBankAuth, requireRole('SUPER_ADMIN', 'REGION_HEAD', 'BRANCH_MANAGER'), (req, res) => {
+router.patch('/bank-applications/:id/assign', requireBankAuth, requireRole('BANK_SUPER_ADMIN', 'BANK_REGION_HEAD', 'BANK_BRANCH_MANAGER'), (req, res) => {
   const app = db.prepare('SELECT * FROM bank_applications WHERE id = ?').get(req.params.id);
   if (!app || app.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { assigned_to_bank_user_id, bank_branch_id } = req.body;
@@ -696,7 +725,7 @@ router.post('/bank-applications/:id/proofs', requireBankAuth, (req, res) => {
   res.json({ id, message: 'Proof uploaded' });
 });
 
-router.patch('/proofs/:id/verify', requireBankAuth, requireRole('SUPER_ADMIN', 'REGION_HEAD', 'BRANCH_MANAGER'), (req, res) => {
+router.patch('/proofs/:id/verify', requireBankAuth, requireRole('BANK_SUPER_ADMIN', 'BANK_REGION_HEAD', 'BANK_BRANCH_MANAGER'), (req, res) => {
   const proof = db.prepare('SELECT bap.*, ba.bank_id FROM bank_application_proofs bap JOIN bank_applications ba ON ba.id = bap.bank_application_id WHERE bap.id = ?').get(req.params.id);
   if (!proof || proof.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { status } = req.body;
@@ -761,7 +790,7 @@ router.get('/products/:productId/policy-versions', requireBankAuth, (req, res) =
   res.json(versions);
 });
 
-router.post('/products/:productId/policy-versions', requireBankAuth, requireRole('SUPER_ADMIN'), (req, res) => {
+router.post('/products/:productId/policy-versions', requireBankAuth, requireRole('BANK_SUPER_ADMIN'), (req, res) => {
   const product = db.prepare('SELECT * FROM bank_products WHERE id = ?').get(req.params.productId);
   if (!product || product.bank_id !== req.bankUser.bank_id) return res.status(404).json({ error: 'Not found' });
   const { change_summary } = req.body;
@@ -781,7 +810,7 @@ router.get('/banks/:bankId/enhanced-dashboard', requireBankAuth, (req, res) => {
 
   let scopeWhere = 'WHERE ba.bank_id = ?';
   const scopeParams = [req.params.bankId];
-  if (bank_role === 'BRANCH_MANAGER' && userBranchId) {
+  if (bank_role === 'BANK_BRANCH_MANAGER' && userBranchId) {
     scopeWhere += ' AND ba.bank_branch_id = ?';
     scopeParams.push(userBranchId);
   }
@@ -825,7 +854,7 @@ router.get('/banks/:bankId/enhanced-dashboard', requireBankAuth, (req, res) => {
 
   // Branch performance table (only for SUPER_ADMIN / REGION_HEAD)
   let branchPerformance = [];
-  if (['SUPER_ADMIN', 'REGION_HEAD'].includes(bank_role)) {
+  if (['BANK_SUPER_ADMIN', 'BANK_REGION_HEAD'].includes(bank_role)) {
     branchPerformance = db.prepare(`
       SELECT bb.id, bb.branch_name, bb.state, bb.region,
         COUNT(ba.id) as apps,
@@ -920,10 +949,12 @@ router.get('/external/applications', requireBankApiKey, (req, res) => {
 router.post('/external/application/status', requireBankApiKey, (req, res) => {
   const { application_id, status, sanction_amount_paise, disbursed_amount_paise, roi_final, rejection_reason } = req.body;
   if (!application_id || !status) return res.status(400).json({ error: 'application_id and status required' });
+  const FROZEN_STATUSES = ['NOT_CONNECTED','CONTACTED','YET_TO_CONNECT','LOGIN_SUBMITTED','LOGIN_IN_PROGRESS','LOGIN_REJECTED','DUPLICATE_LOGIN','DOCS_PENDING','DOCS_SUBMITTED','DOCS_VERIFICATION','UNDER_REVIEW','CREDIT_CHECK','FIELD_VERIFICATION','QUERY_RAISED','CONDITIONAL_SANCTION','SANCTIONED','REJECTED','SANCTION_ACCEPTED','AGREEMENT_SIGNED','DISBURSEMENT_PENDING','DISBURSED','CLOSED','DROPPED','EXPIRED'];
+  if (!FROZEN_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status value' });
   const app = db.prepare('SELECT * FROM bank_applications WHERE id = ? AND bank_id = ?').get(application_id, req.bankApiKey.bank_id);
   if (!app) return res.status(404).json({ error: 'Application not found' });
-  db.prepare('UPDATE bank_applications SET status=?, sanction_amount_paise=COALESCE(?,sanction_amount_paise), disbursed_amount_paise=COALESCE(?,disbursed_amount_paise), roi_final=COALESCE(?,roi_final), rejection_reason=COALESCE(?,rejection_reason), last_bank_update_at=datetime(\'now\'), updated_at=datetime(\'now\') WHERE id=?')
-    .run(status, sanction_amount_paise ?? null, disbursed_amount_paise ?? null, roi_final ?? null, rejection_reason ?? null, application_id);
+  db.prepare('UPDATE bank_applications SET status=?, main_status=?, sanction_amount_paise=COALESCE(?,sanction_amount_paise), disbursed_amount_paise=COALESCE(?,disbursed_amount_paise), roi_final=COALESCE(?,roi_final), rejection_reason=COALESCE(?,rejection_reason), last_bank_update_at=datetime(\'now\'), updated_at=datetime(\'now\') WHERE id=?')
+    .run(status, status, sanction_amount_paise ?? null, disbursed_amount_paise ?? null, roi_final ?? null, rejection_reason ?? null, application_id);
   db.prepare('INSERT INTO bank_application_events (id, bank_id, user_id, event_type, entity_id, details) VALUES (?, ?, ?, ?, ?, ?)').run(
     uuidv4(), req.bankApiKey.bank_id, 'API', 'STATUS_CHANGE', application_id,
     JSON.stringify({ from: app.status, to: status, via: 'API' })

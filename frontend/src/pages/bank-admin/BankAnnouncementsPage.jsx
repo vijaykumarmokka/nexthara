@@ -12,7 +12,7 @@ export default function BankAnnouncementsPage({ bankId, bankRole }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', attachment_url: '', visible_to: 'ALL' });
 
-  const canCreate = bankRole === 'SUPER_ADMIN';
+  const canCreate = bankRole === 'BANK_SUPER_ADMIN';
 
   const load = async () => {
     setLoading(true);

@@ -1,7 +1,8 @@
 import { useAuth } from '../../AuthContext';
 import NexharaLogo from '../NexharaLogo';
 
-const SUPER_ADMIN_NAV = [
+// Internal CRM — full access (SUPER_ADMIN, LOAN_HEAD)
+const CRM_FULL_NAV = [
   { key: 'leads',           icon: 'fa-funnel-dollar',  label: 'Leads' },
   { key: 'events',          icon: 'fa-calendar-alt',   label: 'Events' },
   { key: 'dashboard',       icon: 'fa-th-large',       label: 'Cases' },
@@ -11,6 +12,15 @@ const SUPER_ADMIN_NAV = [
   { key: 'users',           icon: 'fa-users',          label: 'Users' },
 ];
 
+// Internal CRM — restricted (LOAN_EXECUTIVE — own cases only, no user management)
+const CRM_EXEC_NAV = [
+  { key: 'leads',           icon: 'fa-funnel-dollar',  label: 'Leads' },
+  { key: 'dashboard',       icon: 'fa-th-large',       label: 'Cases' },
+  { key: 'applications',    icon: 'fa-file-alt',       label: 'Applications' },
+  { key: 'leads-analytics', icon: 'fa-chart-line',     label: 'Reports' },
+];
+
+// Bank user nav (legacy fallback — bank users now use bank-admin portal)
 const BANK_USER_NAV = [
   { key: 'dashboard',      icon: 'fa-th-large',        label: 'Dashboard' },
   { key: 'applications',   icon: 'fa-file-alt',        label: 'Applications' },
@@ -20,18 +30,29 @@ const BANK_USER_NAV = [
   { key: 'reports',        icon: 'fa-chart-bar',       label: 'Reports' },
 ];
 
+const ROLE_LABELS = {
+  SUPER_ADMIN:    'Super Admin',
+  LOAN_HEAD:      'Loan Head',
+  LOAN_EXECUTIVE: 'Loan Executive',
+  bank_user:      'Bank User', // legacy
+};
+
+function getNavItems(role) {
+  if (role === 'LOAN_EXECUTIVE') return CRM_EXEC_NAV;
+  if (role === 'bank_user')      return BANK_USER_NAV;
+  return CRM_FULL_NAV; // SUPER_ADMIN, LOAN_HEAD, default
+}
+
 export default function Header({ activeView, onViewChange }) {
   const { user, logout } = useAuth();
 
-  const navItems = user?.role === 'bank_user' ? BANK_USER_NAV : SUPER_ADMIN_NAV;
+  const navItems = getNavItems(user?.role);
 
   const initials = user?.name
     ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : '?';
 
-  const roleLabel = user?.role === 'super_admin'
-    ? 'Super Admin'
-    : user?.bank ? `${user.bank} User` : 'Bank User';
+  const roleLabel = ROLE_LABELS[user?.role] || user?.role || 'User';
 
   return (
     <header className="top-bar">
@@ -39,7 +60,7 @@ export default function Header({ activeView, onViewChange }) {
         <div className="brand">
           <NexharaLogo height={32} dark={true} />
           <div className="brand-text">
-            <span>{user?.role === 'bank_user' ? 'Bank Partner Portal' : 'Bank Application Status Portal'}</span>
+            <span>Nexthara CRM</span>
           </div>
         </div>
         <div className="header-right">
@@ -50,7 +71,7 @@ export default function Header({ activeView, onViewChange }) {
           <div className="user-profile">
             <div className="user-avatar">{initials}</div>
             <div className="user-info">
-              <div className="name">{user?.name || 'User'}</div>
+              <div className="name">{user?.full_name || user?.name || 'User'}</div>
               <div className="role">{roleLabel}</div>
             </div>
             <i className="fas fa-chevron-down" style={{ fontSize: 10, opacity: 0.7, color: 'white' }}></i>

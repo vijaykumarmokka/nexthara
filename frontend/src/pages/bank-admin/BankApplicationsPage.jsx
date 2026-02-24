@@ -70,7 +70,7 @@ export default function BankApplicationsPage({ bankId, bankRole, onOpenApp }) {
   useEffect(() => {
     bankAdminApi.getProducts(bankId).then(setProducts).catch(() => {});
     bankAdminApi.getBranches(bankId).then(setBranches).catch(() => {});
-    bankAdminApi.getUsers(bankId).then(u => setOfficers(u.filter(x => x.role === 'OFFICER' || x.role === 'BRANCH_MANAGER'))).catch(() => {});
+    bankAdminApi.getUsers(bankId).then(u => setOfficers(u.filter(x => x.role === 'BANK_OFFICER' || x.role === 'BANK_BRANCH_MANAGER'))).catch(() => {});
   }, [bankId]);
 
   const setFilter = (k, v) => {
@@ -119,14 +119,14 @@ export default function BankApplicationsPage({ bankId, bankRole, onOpenApp }) {
           {products.map(p => <option key={p.id} value={p.id}>{p.product_name}</option>)}
         </select>
 
-        {['SUPER_ADMIN','REGION_HEAD'].includes(bankRole) && (
+        {['BANK_SUPER_ADMIN','BANK_REGION_HEAD'].includes(bankRole) && (
           <select style={inputStyle} value={filters.branch_id} onChange={e => setFilter('branch_id', e.target.value)}>
             <option value="">All Branches</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.branch_name}</option>)}
           </select>
         )}
 
-        {['SUPER_ADMIN','REGION_HEAD','BRANCH_MANAGER'].includes(bankRole) && (
+        {['BANK_SUPER_ADMIN','BANK_REGION_HEAD','BANK_BRANCH_MANAGER'].includes(bankRole) && (
           <select style={inputStyle} value={filters.officer_id} onChange={e => setFilter('officer_id', e.target.value)}>
             <option value="">All Officers</option>
             {officers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
